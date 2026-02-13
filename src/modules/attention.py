@@ -10,29 +10,33 @@ import torchvision.utils as vutils
 import torchvision
 from PIL import Image
 import torch.nn.functional as F
+from thop import profile
+import time
 
 
 class MHSA(nn.Module):
+
     def __init__(self, embed_dim, num_heads):
         super().__init__()
 
+        self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
         self.scale = self.head_dim ** -0.5
-        self.num_heads = num_heads
-
+        
         self.W_q = nn.Linear(embed_dim,embed_dim)
         self.W_k = nn.Linear(embed_dim,embed_dim)
         self.W_v = nn.Linear(embed_dim,embed_dim)
         self.projection = nn.Linear(embed_dim,embed_dim)
 
-    def forward(self, x):
-        
-        # You need to reshape and permute dimension in a certain manner
-        # so that each head (C // num_heads) interact
-        # only with its dimensions and not other heads.
 
-        # Try to write at each operation the shape of the tensor if you
-        # feel confused.
+    @staticmethod
+    def attention(q, k, v,scale):
+        attention = torch.matmul(q, k.transpose(-2, -1)) / scale
+        attention = attention.softmax(dim=-1)
+        return torch.matmul(attention, v)
+
+
+    def forward(self, x):
 
         B, N, C = x.shape # [Batch_size,Nb_patch + 1 ,Emb_dim]
 
@@ -41,32 +45,25 @@ class MHSA(nn.Module):
         k = self.W_k(x)
         v = self.W_v(x)
 
-        #q,k,v [Batch_size,Nb_patch + 1,Num_heads,Head_dim]
+        # q,k,v [Batch_size,Nb_patch + 1,Num_heads,Head_dim]
 
         q = q.reshape(B,N,self.num_heads,self.head_dim)
         k = k.reshape(B,N,self.num_heads,self.head_dim)
         v = v.reshape(B,N,self.num_heads,self.head_dim)
 
-        #q,k,v [Batch_size, Num_heads, Nb_patchs + 1, Head_dim]
+        # q,k,v [Batch_size, Num_heads, Nb_patchs + 1, Head_dim]
         q = q.permute(0, 2, 1, 3)
         k = k.permute(0, 2, 1, 3)
         v = v.permute(0, 2, 1, 3)
 
-        h = []
+        h = self.attention(q, k, v, self.scale)  # [B, num_heads, N, head_dim]
+        h = h.permute(0, 2, 1, 3).contiguous()  # [B, N, num_heads, head_dim]
+        concat_h = h.reshape(B, N, C)  # [B, N, embed_dim] 
 
-        for i in range(self.num_heads) :
-            attention = torch.matmul(q[:,i,:,:], k[:,i,:,:].transpose(-1, -2)) / self.scale
-            attention = F.softmax(attention,dim=-1)
-            hi = torch.matmul(attention,v[:,i,:,:])
-            h.append(hi)
-
-        # each hi is dim [B, N, head_dim]
-        concat_h = torch.cat(h,dim =-1) # [B, N, embed_dim]
         x = self.projection(concat_h)
 
         return x
     
-
 
 
 class MaSSA(nn.Module):
@@ -106,8 +103,43 @@ class MaSSA(nn.Module):
         mcv = torch.matmul(match_scores, context_vectors)  # [B, N, γC]
         mcv = self.W_MCV(mcv)  # [B, N, C]
         out = mcv * V  # [B, N, C]
+        
+        return self.projection(out), context_vectors
 
-        return self.projection(out)
-    
 
-    
+def time_model(model, x, n_warmup=10, n_runs=50):
+    model.eval()
+    with torch.no_grad():
+        for _ in range(n_warmup):
+            _ = model(x)
+        torch.cuda.synchronize()
+        
+        t0 = time.time()
+        for _ in range(n_runs):
+            _ = model(x)
+        torch.cuda.synchronize()
+
+    return (time.time() - t0) / n_runs
+
+
+if __name__ == "__main__":
+    embed_dim = 128
+    num_heads = 4
+    k = 4
+    gamma = 0.5
+    batch_size = 16
+    N = [128, 256, 512, 1024, 2048]
+
+    for nb_tokens in N:
+        print(f"\n Number of tokens: {nb_tokens}")
+        x = torch.randn(batch_size, nb_tokens, embed_dim).cuda()
+
+        mhsa = MHSA(embed_dim, num_heads).cuda()
+        massa = MaSSA(embed_dim, k, gamma).cuda()
+
+        mhsa_time = time_model(mhsa, x)
+        massa_time = time_model(massa, x)
+
+        print(f"MHSA  Time: {mhsa_time*1000:.3f} ms")
+        print(f"MaSSA Time: {massa_time*1000:.3f} ms")
+        print(f"Speedup: {mhsa_time / massa_time:.2f}x")
