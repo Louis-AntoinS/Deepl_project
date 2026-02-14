@@ -1,6 +1,6 @@
 from ast import mod
 from math import exp
-from typing import Self
+from sympy import false
 import torch
 from torch import nn
 import matplotlib.pyplot as plt
@@ -16,7 +16,7 @@ from src.modules.attention import MHSA, MaSSA
 from src.modules.ffn import MLP, ContextGatedFFN
 
 
-class inverted_residual(nn.Module):
+class Inverted_residual(nn.Module):
     def __init__(self,in_channels, out_channels, stride = 2 , expansion_factor=2):
             super().__init__()
             
@@ -40,14 +40,14 @@ class inverted_residual(nn.Module):
                 nn.BatchNorm2d(out_channels)
             )
                  
-            def forward(self, x):
-                if self.use_res_connect:
-                    return x + self.conv(x)
-                else:
-                    return self.conv(x)
+    def forward(self, x):
+        if self.use_res_connect:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
                  
-                 
-class conv_stem(nn.Module):
+
+class Conv_stem(nn.Module):
      def __init__(self, in_channels, out_channels) :
           super().__init__()
 
@@ -57,7 +57,7 @@ class conv_stem(nn.Module):
                nn.ReLU6(inplace=True)
           )
 
-          self.mv2_block = inverted_residual(out_channels, out_channels,stride = 2, expansion_factor=2)
+          self.mv2_block = Inverted_residual(out_channels, out_channels,stride = 2, expansion_factor=2)
 
      def forward(self, x):
         # x : [Batch, 3, 224, 224]
@@ -66,7 +66,65 @@ class conv_stem(nn.Module):
         out = self.mv2_block(x)
         # out : [Batch, 24, 56, 56]
         return out
-     
+         
+
+class MaViTLayer(nn.Module):
+    def __init__(self, channels, k):
+        super().__init__()
+        self.layer_norm1 = nn.LayerNorm(channels)
+        self.layer_norm2 = nn.LayerNorm(channels)
+
+        self.attention = MaSSA(embed_dim=channels, k=k)
+        self.context_gated_ffn = ContextGatedFFN(embed_dim=channels, k=k, gamma=0.5, expansion_factor=2)
+        
+    def forward(self, x):
+        attn_out, context_vectors = self.attention(x)
+        x = x + attn_out
+        x = x + self.context_gated_ffn(x, context_vectors)
+        return x
+    
+
+class MatchViTBlock(nn.Module):
+    def __init__(self, channels, num_heads):
+        super().__init__()
+        
+        # Local representation
+        self.local_rep = nn.Sequential(
+              nn.Conv2d(in_channels=channels,out_channels=channels, kernel_size=3 ,padding=1, groups= channels, bias = False),
+              nn.BatchNorm2d(channels),
+              nn.Conv2d(channels, channels, 1, bias=False),
+              nn.BatchNorm2d(channels),
+              nn.ReLU6(inplace=True)
+         )
+        
+        # Global representation 
+        self.transformer = MaViTLayer(channels, num_heads)
+
+    def forward(self, x):
+        # x : [Batch,C,H,W]
+
+        # Local representations
+
+        x = x + self.local_rep(x)
+
+        # Global representations
+    
+        B, C, H, W = x.shape
+
+        x = x.flatten(2).transpose(1,2) # x : [Batch,N,C]        
+        x = self.transformer(x)
+        out = x.transpose(1, 2).reshape(B, C, H, W) # x : [Batch,C,H,W]
+
+
+        return out 
+
+
+
+        
+
+
+        
+
 
                  
 

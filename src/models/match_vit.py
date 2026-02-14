@@ -1,42 +1,54 @@
+from itertools import count
+import torch
 from torch import nn
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+from torchvision.datasets import ImageFolder
+from torchvision import transforms
+import torchvision.utils as vutils
+import torchvision
+from PIL import Image
+import torch.nn.functional as F
+import numpy as np
+from src.modules.attention import MHSA, MaSSA
+from src.modules.ffn import MLP, ContextGatedFFN
 from src.models.mobilevit import MV2Block
-from src.modules.match_vit_blocks import conv_stem,inverted_residual
+from src.modules.match_vit_blocks import Conv_stem,Inverted_residual, MatchViTBlock
 from src.models.vit import MaSSA_Block
+from src.utils import count_parameters
+
+
 
 class MatchVit(nn.Module):
     def __init__(self,num_classes,expansion=2,alpha = 0.75):
         super().__init__()
             
-        self.stem = nn.Sequential(
-            conv_stem(in_channels=3,out_channels=32*alpha),
-            inverted_residual(in_channels=32*alpha,out_channels=32*alpha,expansion_factor=expansion)
-        )
+        self.stem = Conv_stem(in_channels=3, out_channels=int(32*alpha))
         
         self.stage1 = nn.Sequential(
-            inverted_residual(in_channels=32*alpha,out_channels=64*alpha,expansion_factor=expansion),
-            MaSSA_Block(attn_kwargs={'k': 4, 'gamma':0.5},expansion_factor=expansion)
-            
+            Inverted_residual(in_channels=int(32*alpha),out_channels=int(64*alpha),expansion_factor=expansion),
+            MatchViTBlock(channels = int(64*alpha), num_heads=4)
         )
         
         self.stage2 = nn.Sequential(
-            inverted_residual(in_channels=64*alpha,out_channels=128*alpha,expansion_factor=expansion),
-            MaSSA_Block(attn_kwargs={'k': 8, 'gamma':0.5},expansion_factor=expansion)
-            
+            Inverted_residual(in_channels=int(64*alpha),out_channels=int(128*alpha),expansion_factor=expansion),
+            MatchViTBlock(channels = int(128*alpha), num_heads=8)
+
         )
         
         self.stage3 = nn.Sequential(
-            inverted_residual(in_channels=128*alpha,out_channels=256*alpha,expansion_factor=expansion),
-            MaSSA_Block(attn_kwargs={'k': 16, 'gamma':0.5},expansion_factor=expansion)
+            Inverted_residual(in_channels=int(128*alpha),out_channels=int(256*alpha),expansion_factor=expansion),
+            MatchViTBlock(channels = int(256*alpha), num_heads=16)
             
         )
         
         self.stage4 = nn.Sequential(
-            inverted_residual(in_channels=256*alpha,out_channels=512*alpha,expansion_factor=expansion),
-            MaSSA_Block(attn_kwargs={'k': 32, 'gamma':0.5},expansion_factor=expansion)
+            Inverted_residual(in_channels=int(256*alpha),out_channels=int(512*alpha),expansion_factor=expansion),
+            MatchViTBlock(channels = int(512*alpha), num_heads=32)
         )
         
-        self.pool = nn.AvgPool2d(4,1)
-        self.classifier = nn.Linear(512*alpha,num_classes)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.classifier = nn.Linear(int(512*alpha),num_classes)
     
     def forward(self,x):
         
@@ -46,10 +58,16 @@ class MatchVit(nn.Module):
         x = self.stage3(x)
         x = self.stage4(x)
         
-        x = self.pool(x).view(-1, x.shape[1])
+        x = self.pool(x).view(x.shape[0], -1)
         x = self.classifier(x)
         
         return x
     
 
-    
+if __name__ == "__main__":
+    model = MatchVit(num_classes=1000, expansion=2, alpha=0.75)
+    x = torch.randn(1,3,224,224)
+    out = model(x)
+    print(out.shape)
+    print(count_parameters(model))
+

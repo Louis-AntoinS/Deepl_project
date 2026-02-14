@@ -107,6 +107,12 @@ class MaSSA(nn.Module):
         return self.projection(out), context_vectors
 
 
+
+
+
+
+
+
 def time_model(model, x, n_warmup=10, n_runs=50):
     model.eval()
     with torch.no_grad():
