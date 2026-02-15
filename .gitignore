@@ -1,0 +1,26 @@
+# --- DATA & MODELS ---
+data/
+datasets/
+checkpoints/
+*.pth
+*.onnx
+
+# --- LOGS & VISUALIZATION ---
+runs/
+.tensorboard/
+
+# --- PYTHON ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+build/
+dist/
+
+# --- SYSTEM & IDE ---
+.DS_Store
+.vscode/
+.idea/
+.ipynb_checkpoints/
