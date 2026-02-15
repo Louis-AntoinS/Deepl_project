@@ -30,11 +30,11 @@ class Inverted_residual(nn.Module):
                 # expansion layer
                 nn.Conv2d(self.in_channels,hidden_dim,kernel_size=1,stride=1,padding = 0, bias = False),
                 nn.BatchNorm2d(hidden_dim),
-                nn.ReLU6(inplace=True),
+                nn.SiLU(inplace=True),
                 # depthwise convolution
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, stride=self.stride, padding=1, groups=hidden_dim, bias = False),
                 nn.BatchNorm2d(hidden_dim),
-                nn.ReLU6(inplace=True),
+                nn.SiLU(inplace=True),
                 # projection layer 
                 nn.Conv2d(hidden_dim, out_channels, kernel_size=1, stride=1, padding=0, bias = False),
                 nn.BatchNorm2d(out_channels)
@@ -54,7 +54,7 @@ class Conv_stem(nn.Module):
           self.conv_3x3 = nn.Sequential(
                nn.Conv2d(in_channels,out_channels,kernel_size=3, stride = 2, padding = 1, bias= False),
                nn.BatchNorm2d(out_channels),
-               nn.ReLU6(inplace=True)
+               nn.SiLU(inplace=True)
           )
 
           self.mv2_block = Inverted_residual(out_channels, out_channels,stride = 2, expansion_factor=2)
@@ -69,42 +69,59 @@ class Conv_stem(nn.Module):
          
 
 class MaViTLayer(nn.Module):
-    def __init__(self, channels, k):
+    def __init__(self, channels, k,attentionMaSSA = True):
         super().__init__()
-        self.layer_norm1 = nn.LayerNorm(channels)
-        self.layer_norm2 = nn.LayerNorm(channels)
-
-        self.attention = MaSSA(embed_dim=channels, k=k)
-        self.context_gated_ffn = ContextGatedFFN(embed_dim=channels, k=k, gamma=0.5, expansion_factor=2)
+        self.ln1 = nn.LayerNorm(channels)
+        self.ln2 = nn.LayerNorm(channels)
+        self.attentionMaSSA = attentionMaSSA
+        
+        
+        if attentionMaSSA:
+            self.attention = MaSSA(embed_dim=channels, k=k)
+            self.context_gated_ffn = ContextGatedFFN(embed_dim=channels, k=k, gamma=0.5, expansion_factor=2)
+        else:
+            self.attention = MHSA(embed_dim=channels, num_heads=k)
+            self.context_gated_ffn = MLP(embed_dim=channels, expansion_factor=2)
         
     def forward(self, x):
-        attn_out, context_vectors = self.attention(x)
+        
+        if self.attentionMaSSA:
+            attn_out, context_vectors = self.attention(self.ln1(x))
+            
+        else:
+            attn_out = self.attention(self.ln1(x))
+            
         x = x + attn_out
-        x = x + self.context_gated_ffn(x, context_vectors)
+        
+        if self.attentionMaSSA:
+            x = x + self.context_gated_ffn(self.ln2(x), context_vectors)
+        else:
+            x = x + self.context_gated_ffn(self.ln2(x))
+            
         return x
     
 
 class MatchViTBlock(nn.Module):
-    def __init__(self, channels, num_heads):
+    def __init__(self, channels, num_heads, attentionMaSSA = True):
         super().__init__()
         
         # Local representation
         self.local_rep = nn.Sequential(
               nn.Conv2d(in_channels=channels,out_channels=channels, kernel_size=3 ,padding=1, groups= channels, bias = False),
               nn.BatchNorm2d(channels),
+              nn.SiLU(),
               nn.Conv2d(channels, channels, 1, bias=False),
               nn.BatchNorm2d(channels),
-              nn.ReLU6(inplace=True)
+              nn.SiLU(inplace=True)
          )
         
         # Global representation 
-        self.transformer = MaViTLayer(channels, num_heads)
+        self.transformer = MaViTLayer(channels, num_heads, attentionMaSSA)
 
     def forward(self, x):
         # x : [Batch,C,H,W]
 
         # Local representations
-
         x = x + self.local_rep(x)
 
         # Global representations
@@ -113,10 +130,8 @@ class MatchViTBlock(nn.Module):
 
         x = x.flatten(2).transpose(1,2) # x : [Batch,N,C]        
         x = self.transformer(x)
-        out = x.transpose(1, 2).reshape(B, C, H, W) # x : [Batch,C,H,W]
-
-
-        return out 
+        x = x.transpose(1, 2).reshape(B, C, H, W) # x : [Batch,C,H,W]
+        return x 
 
 
 

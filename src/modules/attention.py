@@ -1,3 +1,4 @@
+from pyexpat import model
 from re import M
 from IPython import embed
 import torch
@@ -10,7 +11,7 @@ import torchvision.utils as vutils
 import torchvision
 from PIL import Image
 import torch.nn.functional as F
-from thop import profile
+from thop import profile,clever_format
 import time
 
 
@@ -149,3 +150,11 @@ if __name__ == "__main__":
         print(f"MHSA  Time: {mhsa_time*1000:.3f} ms")
         print(f"MaSSA Time: {massa_time*1000:.3f} ms")
         print(f"Speedup: {mhsa_time / massa_time:.2f}x")
+        
+        massa_macs, massa_params = profile(massa, inputs=(x,))
+        massa_macs_readable, massa_params_readable = clever_format([massa_macs, massa_params], "%.3f")
+        print(f"Formatted massa MACs: {massa_macs_readable}, Formatted Parameters: {massa_params_readable}")
+        
+        mhsa_macs, mhsa_params = profile(mhsa, inputs=(x,))
+        mhsa_macs_readable, mhsa_params_readable = clever_format([mhsa_macs, mhsa_params], "%.3f")
+        print(f"Formatted MHSA MACs: {mhsa_macs_readable}, Formatted Parameters: {mhsa_params_readable}")

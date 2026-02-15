@@ -14,6 +14,7 @@ from src.modules.attention import MHSA, MaSSA
 from src.modules.ffn import MLP, ContextGatedFFN
 from src.models.vit import ViT, Block, MaSSA_Block, PatchEmbed, get_positional_embeddings 
 import time
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
@@ -32,7 +33,7 @@ def eval_model(model, loader, device):
     acc = 0.
     c = 0
 
-    for x, y in loader:
+    for x, y in tqdm(loader, desc="Evaluating"):
         x, y = x.to(device), y.to(device)
         yhat = model(x)
 
@@ -48,21 +49,23 @@ def train_test(device,train_loader,test_loader,model,optimizer,epochs):
     print(f"Model has {count_parameters(model)} trainable parameters.")
     
     for epoch in range(epochs):
-      train_loss = 0.
-      for x, y in train_loader:
-        x, y = x.to(device), y.to(device)
+        train_loss = 0.
+        for x, y in tqdm(train_loader, desc=f"Epoch {epoch}"):
+            x, y = x.to(device), y.to(device)
 
-        optimizer.zero_grad()
-        yhat = model(x)
-        loss = F.cross_entropy(yhat, y)
-        loss.backward()
+            optimizer.zero_grad()
+            yhat = model(x)
+            loss = F.cross_entropy(yhat, y)
+            loss.backward()
 
-        optimizer.step()
+            optimizer.step()
 
-        train_loss += loss.item()
-
-      print(f"--- Epoch {epoch} ---")
-      print(f"Train loss: {train_loss / len(train_loader)}")
-
+            train_loss += loss.item()
+            del x, y, yhat, loss
+            torch.cuda.empty_cache()
+        print(f"--- Epoch {epoch} ---")
+        print(f"Train loss: {train_loss / len(train_loader)}")
     acc = eval_model(model, test_loader, device)
     print(f"Test accuracy: {acc}")
+    
+            
