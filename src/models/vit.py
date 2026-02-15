@@ -110,20 +110,14 @@ class ViT(nn.Module):
 
   def forward(self, x):
     B, C, H, W = x.shape
-    ## image to patches
     x = self.patch_embed(x)
-    ## concatenating class token
     cls_token = self.class_token.unsqueeze(0)
     cls_token = cls_token.expand(B, -1, -1)
     x = torch.cat([cls_token,x], dim=1)
-    ## adding positional embedding
-    x = x + self.pos_embed  # broadcasting sur le batch_size
-    ## forward in the transformer
+    x = x + self.pos_embed 
     x = self.blocks(x)
-    ## Normalize the output
     x = self.norm(x)
-    ## classification output
-    output = self.head(x[:,0,:]) # Only CLS
+    output = self.head(x[:,0,:])
     return output
 
 

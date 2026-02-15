@@ -49,13 +49,8 @@ img_chan = 3
 
 exemple_input = torch.randn(1, 3, 256, 256).to(device)
 
-#print("------ Training ViT ------")
-#model_ViT = ViT({'num_heads': 4}, embed_dim, nb_blocks = nb_blocks, patch_size = patch_size,img_size=img_size,img_chan=img_chan, use_matchvit_components=False).to(device)
-#opt_ViT = torch.optim.Adam(model_ViT.parameters(), lr=lr, weight_decay=1e-2)
-#train_test(device,train_loader,test_loader,model_ViT,opt_ViT,EPOCHS)
-#cuda.empty_cache()
-
 #print("------ Training MatchVIT ------")
+
 model_MatchVIT = MatchVit(num_classes=10, alpha=1.5).to(device)
 model_Macs, model_params = profile(model_MatchVIT, inputs=(exemple_input,))
 model_Macs_readable, model_params_readable = clever_format([model_Macs, model_params], "%.3f")
@@ -69,7 +64,7 @@ cuda.empty_cache()
 #print("------ Training MobileViT ------")
 model_ViT = MobileViT((256, 256), dims = [144, 192, 240], channels = [16, 32, 64, 64, 96, 96, 128, 128, 160, 160, 640], num_classes=10).to(device)
 opt_ViT = torch.optim.Adam(model_ViT.parameters(), lr=lr, weight_decay=1e-2)
-#train_test(device,train_loader,test_loader,model_ViT,opt_ViT,EPOCHS)
+train_test(device,train_loader,test_loader,model_ViT,opt_ViT,EPOCHS)
 
 model_Macs, model_params = profile(model_ViT, inputs=(exemple_input,))
 model_Macs_readable, model_params_readable = clever_format([model_Macs, model_params], "%.3f")

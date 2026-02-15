@@ -12,7 +12,7 @@ import numpy as np
 
 
 class MLP(nn.Module):
-  def __init__(self, embed_dim, expansion_factor = 4):
+  def __init__(self, embed_dim, expansion_factor = 2):
     super().__init__()
 
     self.hidden_dim = expansion_factor * embed_dim
